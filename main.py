@@ -6,7 +6,7 @@ import numpy as np
 from gym.spaces import Box, Discrete
 from pathlib import Path
 from torch.autograd import Variable
-from tensorboardX import SummaryWriter
+#from tensorboardX import SummaryWriter
 from utils.make_env import make_env
 from utils.buffer import ReplayBuffer
 from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
@@ -17,7 +17,7 @@ USE_CUDA = False  # torch.cuda.is_available()
 def make_parallel_env(env_id, n_rollout_threads, seed, discrete_action):
     def get_env_fn(rank):
         def init_env():
-            env = make_env(env_id, discrete_action=discrete_action)
+            env = make_env(env_id)
             env.seed(seed + rank * 1000)
             np.random.seed(seed + rank * 1000)
             return env
@@ -42,7 +42,7 @@ def run(config):
     run_dir = model_dir / curr_run
     log_dir = run_dir / 'logs'
     os.makedirs(log_dir)
-    logger = SummaryWriter(str(log_dir))
+    #logger = SummaryWriter(str(log_dir))
 
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
@@ -60,11 +60,21 @@ def run(config):
                                  [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
                                   for acsp in env.action_space])
     t = 0
+
+    hundred_episode_average_rewards=[]
+
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
+
+        if (ep_i%100==0):
+            print('Rewards till',ep_i,'=',np.mean(hundred_episode_average_rewards))
+        '''
         print("Episodes %i-%i of %i" % (ep_i + 1,
                                         ep_i + 1 + config.n_rollout_threads,
                                         config.n_episodes))
+        '''
         obs = env.reset()
+
+        rewards_for_this_episode=[]
         # obs.shape = (n_rollout_threads, nagent)(nobs), nobs differs per agent so not tensor
         maddpg.prep_rollouts(device='cpu')
 
@@ -84,6 +94,9 @@ def run(config):
             # rearrange actions to be per environment
             actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
             next_obs, rewards, dones, infos = env.step(actions)
+
+            rewards_for_this_episode.append(np.mean(rewards))
+
             replay_buffer.push(obs, agent_actions, rewards, next_obs, dones)
             obs = next_obs
             t += config.n_rollout_threads
@@ -97,13 +110,15 @@ def run(config):
                     for a_i in range(maddpg.nagents):
                         sample = replay_buffer.sample(config.batch_size,
                                                       to_gpu=USE_CUDA)
-                        maddpg.update(sample, a_i, logger=logger)
+                        maddpg.update(sample, a_i)#, logger=logger)
                     maddpg.update_all_targets()
                 maddpg.prep_rollouts(device='cpu')
         ep_rews = replay_buffer.get_average_rewards(
             config.episode_length * config.n_rollout_threads)
-        for a_i, a_ep_rew in enumerate(ep_rews):
-            logger.add_scalar('agent%i/mean_episode_rewards' % a_i, a_ep_rew, ep_i)
+        
+        hundred_episode_average_rewards.append(np.sum(rewards_for_this_episode))
+        #for a_i, a_ep_rew in enumerate(ep_rews):
+            #logger.add_scalar('agent%i/mean_episode_rewards' % a_i, a_ep_rew, ep_i)
 
         if ep_i % config.save_interval < config.n_rollout_threads:
             os.makedirs(run_dir / 'incremental', exist_ok=True)
@@ -112,7 +127,7 @@ def run(config):
 
     maddpg.save(run_dir / 'model.pt')
     env.close()
-    logger.export_scalars_to_json(str(log_dir / 'summary.json'))
+    #logger.export_scalars_to_json(str(log_dir / 'summary.json'))
     logger.close()
 
 

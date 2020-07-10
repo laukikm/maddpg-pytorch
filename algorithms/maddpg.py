@@ -5,6 +5,8 @@ from utils.networks import MLPNetwork
 from utils.misc import soft_update, average_gradients, onehot_from_logits, gumbel_softmax
 from utils.agents import DDPGAgent
 
+import ipdb
+
 MSELoss = torch.nn.MSELoss()
 
 class MADDPG(object):
@@ -67,6 +69,10 @@ class MADDPG(object):
         for a in self.agents:
             a.reset_noise()
 
+
+    def get_features(self,agent,agent_obs,all_observations):
+        return agent_obs
+
     def step(self, observations, explore=False):
         """
         Take a step forward in environment with all agents
@@ -76,8 +82,10 @@ class MADDPG(object):
         Outputs:
             actions: List of actions for each agent
         """
-        return [a.step(obs, explore=explore) for a, obs in zip(self.agents,
+        return [a.step(self.get_features(a,obs,observations), explore=explore) for a, obs in zip(self.agents,
                                                                  observations)]
+
+
 
     def update(self, sample, agent_i, parallel=False, logger=None):
         """
@@ -243,19 +251,27 @@ class MADDPG(object):
             num_in_pol = obsp.shape[0]
             if isinstance(acsp, Box):
                 discrete_action = False
-                get_shape = lambda x: x.shape[0]
             else:  # Discrete
                 discrete_action = True
-                get_shape = lambda x: x.n
+
+            def get_shape(acsp):
+                if isinstance(acsp, Box):
+                    return acsp.shape[0]
+                else:  # Discrete
+                    return acsp.n                
+
+            #ipdb.set_trace()
             num_out_pol = get_shape(acsp)
             if algtype == "MADDPG":
                 num_in_critic = 0
                 for oobsp in env.observation_space:
                     num_in_critic += oobsp.shape[0]
                 for oacsp in env.action_space:
+
                     num_in_critic += get_shape(oacsp)
             else:
                 num_in_critic = obsp.shape[0] + get_shape(acsp)
+
             agent_init_params.append({'num_in_pol': num_in_pol,
                                       'num_out_pol': num_out_pol,
                                       'num_in_critic': num_in_critic})
