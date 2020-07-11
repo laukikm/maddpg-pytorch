@@ -15,7 +15,7 @@ class MADDPG(object):
     """
     def __init__(self, agent_init_params, alg_types,
                  gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64,
-                 discrete_action=False):
+                 discrete_action=[False]):
         """
         Inputs:
             agent_init_params (list of dict): List of dicts with parameters to
@@ -33,10 +33,13 @@ class MADDPG(object):
         """
         self.nagents = len(alg_types)
         self.alg_types = alg_types
-        self.agents = [DDPGAgent(lr=lr, discrete_action=discrete_action,
-                                 hidden_dim=hidden_dim,
-                                 **params)
-                       for params in agent_init_params]
+
+        self.agents=[]
+        for i in range(self.nagents):
+            self.agents.append(DDPGAgent(lr=lr, discrete_action=discrete_action[i],
+                                     hidden_dim=hidden_dim,
+                                     **agent_init_params[i]))
+
         self.agent_init_params = agent_init_params
         self.gamma = gamma
         self.tau = tau
@@ -244,15 +247,18 @@ class MADDPG(object):
         Instantiate instance of this class from multi-agent environment
         """
         agent_init_params = []
+        discrete_action=[]
         alg_types = [adversary_alg if atype == 'adversary' else agent_alg for
                      atype in env.agent_types]
         for acsp, obsp, algtype in zip(env.action_space, env.observation_space,
                                        alg_types):
             num_in_pol = obsp.shape[0]
             if isinstance(acsp, Box):
-                discrete_action = False
+                discrete_action.append(False) 
             else:  # Discrete
-                discrete_action = True
+                discrete_action.append(True)
+
+
 
             def get_shape(acsp):
                 if isinstance(acsp, Box):
@@ -275,12 +281,14 @@ class MADDPG(object):
             agent_init_params.append({'num_in_pol': num_in_pol,
                                       'num_out_pol': num_out_pol,
                                       'num_in_critic': num_in_critic})
+
         init_dict = {'gamma': gamma, 'tau': tau, 'lr': lr,
                      'hidden_dim': hidden_dim,
                      'alg_types': alg_types,
                      'agent_init_params': agent_init_params,
                      'discrete_action': discrete_action}
         instance = cls(**init_dict)
+        #ipdb.set_trace()
         instance.init_dict = init_dict
         return instance
 

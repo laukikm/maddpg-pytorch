@@ -12,7 +12,7 @@ from utils.buffer import ReplayBuffer
 from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 from algorithms.maddpg import MADDPG
 
-USE_CUDA = False  # torch.cuda.is_available()
+USE_CUDA =False # torch.cuda.is_available()
 
 def make_parallel_env(env_id, n_rollout_threads, seed, discrete_action):
     def get_env_fn(rank):
@@ -22,6 +22,7 @@ def make_parallel_env(env_id, n_rollout_threads, seed, discrete_action):
             np.random.seed(seed + rank * 1000)
             return env
         return init_env
+
     if n_rollout_threads == 1:
         return DummyVecEnv([get_env_fn(0)])
     else:
@@ -50,11 +51,25 @@ def run(config):
         torch.set_num_threads(config.n_training_threads)
     env = make_parallel_env(config.env_id, config.n_rollout_threads, config.seed,
                             config.discrete_action)
+
+    if(env=='simple_reference'):
+        for i in range(2):
+            agent_init_params.append({'num_in_pol': num_in_pol,
+                                          'num_out_pol': num_out_pol,
+                                          'num_in_critic': num_in_critic})
+            
+            init_dict = {'gamma': gamma, 'tau': tau, 'lr': lr,
+                         'hidden_dim': hidden_dim,
+                         'alg_types': alg_types,
+                         'agent_init_params': agent_init_params,
+                         'discrete_action': discrete_action}
+
     maddpg = MADDPG.init_from_env(env, agent_alg=config.agent_alg,
                                   adversary_alg=config.adversary_alg,
                                   tau=config.tau,
                                   lr=config.lr,
                                   hidden_dim=config.hidden_dim)
+
     replay_buffer = ReplayBuffer(config.buffer_length, maddpg.nagents,
                                  [obsp.shape[0] for obsp in env.observation_space],
                                  [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
@@ -65,8 +80,9 @@ def run(config):
 
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
 
-        if (ep_i%100==0):
+        if (ep_i%100==0 and ep_i>0):
             print('Rewards till',ep_i,'=',np.mean(hundred_episode_average_rewards))
+            print('Agent Actions=',torch_agent_actions)
         '''
         print("Episodes %i-%i of %i" % (ep_i + 1,
                                         ep_i + 1 + config.n_rollout_threads,
@@ -113,6 +129,8 @@ def run(config):
                         maddpg.update(sample, a_i)#, logger=logger)
                     maddpg.update_all_targets()
                 maddpg.prep_rollouts(device='cpu')
+                
+
         ep_rews = replay_buffer.get_average_rewards(
             config.episode_length * config.n_rollout_threads)
         
