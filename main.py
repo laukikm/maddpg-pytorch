@@ -12,7 +12,12 @@ from utils.buffer import ReplayBuffer
 from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 from algorithms.maddpg import MADDPG
 
-USE_CUDA =False # torch.cuda.is_available()
+import matplotlib.pyplot as plt 
+
+USE_CUDA = torch.cuda.is_available()
+
+import time
+
 
 def make_parallel_env(env_id, n_rollout_threads, seed, discrete_action):
     def get_env_fn(rank):
@@ -76,13 +81,16 @@ def run(config):
                                   for acsp in env.action_space])
     t = 0
 
+    episode_average_rewards=[]
     hundred_episode_average_rewards=[]
 
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
 
         if (ep_i%100==0 and ep_i>0):
-            print('Rewards till',ep_i,'=',np.mean(hundred_episode_average_rewards))
+            hundred_episode_average_rewards.append(np.mean(episode_average_rewards))
+            print('Rewards till',ep_i,'=',hundred_episode_average_rewards[-1])
             print('Agent Actions=',torch_agent_actions)
+            episode_average_rewards=[]
         '''
         print("Episodes %i-%i of %i" % (ep_i + 1,
                                         ep_i + 1 + config.n_rollout_threads,
@@ -129,12 +137,23 @@ def run(config):
                         maddpg.update(sample, a_i)#, logger=logger)
                     maddpg.update_all_targets()
                 maddpg.prep_rollouts(device='cpu')
-                
+            
+            if ep_i>10000:
+                print('Goal Color=',torch_obs[0])
+                print('Communication=',agent_actions[0])
+            
+                env.render()
+                time.sleep(0.01)
+
+
+        if ep_i>100000:
+            import ipdb
+            ipdb.set_trace()
 
         ep_rews = replay_buffer.get_average_rewards(
             config.episode_length * config.n_rollout_threads)
         
-        hundred_episode_average_rewards.append(np.sum(rewards_for_this_episode))
+        episode_average_rewards.append(np.sum(rewards_for_this_episode))
         #for a_i, a_ep_rew in enumerate(ep_rews):
             #logger.add_scalar('agent%i/mean_episode_rewards' % a_i, a_ep_rew, ep_i)
 
@@ -143,10 +162,19 @@ def run(config):
             maddpg.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
             maddpg.save(run_dir / 'model.pt')
 
+    plt.plot(100*np.array(range(1,config.n_episodes//100)),hundred_episode_average_rewards)
+    plt.xlabel('Episode Number')
+    plt.ylabel('Average Reward for 100 episodes')
+    plt.title('Speaker Discrete and Mover Continuous')
+    plt.show('plot.png')
+
     maddpg.save(run_dir / 'model.pt')
     env.close()
+
+
+
     #logger.export_scalars_to_json(str(log_dir / 'summary.json'))
-    logger.close()
+    #logger.close()
 
 
 if __name__ == '__main__':
@@ -162,7 +190,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_training_threads", default=6, type=int)
     parser.add_argument("--buffer_length", default=int(1e6), type=int)
     parser.add_argument("--n_episodes", default=25000, type=int)
-    parser.add_argument("--episode_length", default=25, type=int)
+    parser.add_argument("--episode_length", default=60, type=int)
     parser.add_argument("--steps_per_update", default=100, type=int)
     parser.add_argument("--batch_size",
                         default=1024, type=int,

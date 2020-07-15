@@ -28,7 +28,7 @@ def worker(remote, parent_remote, env_fn_wrapper):
         elif cmd == 'get_spaces':
             remote.send((env.observation_space, env.action_space))
         elif cmd == 'get_agent_types':
-            if all([hasattr(a, 'adversary') for a in env.agents]):
+            if all([hasattr(a, 'adversary') for a in env.agents]):#Comments
                 remote.send(['adversary' if a.adversary else 'agent' for a in
                              env.agents])
             else:
@@ -127,3 +127,7 @@ class DummyVecEnv(VecEnv):
 
     def close(self):
         return
+
+    def render(self):
+        for env in self.envs:
+            env.render()

@@ -85,6 +85,8 @@ class MADDPG(object):
         Outputs:
             actions: List of actions for each agent
         """
+
+
         return [a.step(self.get_features(a,obs,observations), explore=explore) for a, obs in zip(self.agents,
                                                                  observations)]
 
@@ -108,15 +110,28 @@ class MADDPG(object):
 
         curr_agent.critic_optimizer.zero_grad()
         if self.alg_types[agent_i] == 'MADDPG':
-            if self.discrete_action: # one-hot encode action
+
+            all_trgt_acs=[]
+            for i in range(self.nagents):
+                pi=self.target_policies[i]
+                nobs=next_obs[i]
+                if(self.discrete_action[i]):
+                    all_trgt_acs.append(onehot_from_logits(pi(nobs)))
+                else:
+                    all_trgt_acs.append(pi(nobs))
+
+            '''
+            if self.discrete_action[agent_i]: # one-hot encode action
                 all_trgt_acs = [onehot_from_logits(pi(nobs)) for pi, nobs in
                                 zip(self.target_policies, next_obs)]
             else:
                 all_trgt_acs = [pi(nobs) for pi, nobs in zip(self.target_policies,
                                                              next_obs)]
+            '''
+
             trgt_vf_in = torch.cat((*next_obs, *all_trgt_acs), dim=1)
         else:  # DDPG
-            if self.discrete_action:
+            if self.discrete_action[agent_i]:
                 trgt_vf_in = torch.cat((next_obs[agent_i],
                                         onehot_from_logits(
                                             curr_agent.target_policy(
